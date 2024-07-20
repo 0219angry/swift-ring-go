@@ -1,5 +1,10 @@
 package ringbuilder
 
+import (
+	"log/slog"
+	"os"
+)
+
 type RingBuilderParameters struct {
 	partPower    int
 	replicas     int
@@ -28,7 +33,7 @@ type RingBuilder struct {
 
 	removeDevs []map[string]string
 	ring       []byte
-	logger     int
+	logger     *slog.Logger
 }
 
 func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
@@ -47,6 +52,25 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 
 	// r.reprica2part2dev = [][]string{}
 	r.lastPartMoves = make([]byte, r.parts)
+	// r.partMovedBitmap
+	r.lastPartMovesEpoch = 0
+
+	r.lastPartGatherStart = 0
+
+	// r.dispresionGraph
+	r.dispresion = 0.0
+	// r.removeDevs
+	// r.ring
+
+	r.logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	return r
+}
+
+func (r *RingBuilder) Id() string {
+	if r.id == "" {
+		r.logger.Error("id attribute has not been initialised by calling save()")
+	}
+	return r.id
+
 }
