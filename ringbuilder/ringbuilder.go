@@ -39,13 +39,14 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 	r.replicas = params.replicas
 	r.minPartHours = params.minPartHours
 	r.parts = 1 << r.partPower
-	r.devs = []map[string]string{}
+	// r.devs = []map[string]string{}
 	r.devsChanged = false
 	r.version = 0
 	r.overload = 0.0
 	r.id = ""
 
-	r.reprica2part2dev = [][]string{}
+	// r.reprica2part2dev = [][]string{}
+	r.lastPartMoves = make([]byte, r.parts)
 
 	return r
 }
