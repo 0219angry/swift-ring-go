@@ -11,3 +11,12 @@ func deepCopy(from []map[string]interface{}) []map[string]interface{} {
 	}
 	return copiedSlice
 }
+
+func devIsExistIn(devs []Device, devID int) (int, bool) {
+	for i, dev := range devs {
+		if dev.id == devID {
+			return i, true
+		}
+	}
+	return 0, false
+}

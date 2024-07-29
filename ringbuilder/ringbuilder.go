@@ -238,18 +238,17 @@ func (r *RingBuilder) AddDev(dev *Device) (int, error) {
 			r.devs = append(r.devs, dev)
 		}
 	}
-
+	// Check for duplicate device ids in r.devs
 	if dev.id < len(r.devs) && r.devs[dev.id] != nil {
-		err := &DuplicateDeviceError{dupulicateDeviceID: dev.id}
+		err := &DuplicateDeviceError{DupulicateDeviceID: dev.id}
 		r.logger.Error(err.Error())
 		return none, err
 	}
-
 	// Add holes to r.devs to ensure r.devs[dev.id] will be the dev
 	for dev.id >= len(r.devs) {
 		r.devs = append(r.devs, nil)
 	}
-
+	// missing device information
 	missing := make([]string, 0)
 
 	if dev.region == 0 {
@@ -272,7 +271,7 @@ func (r *RingBuilder) AddDev(dev *Device) (int, error) {
 	}
 
 	if len(missing) > 0 {
-		err := &ValueError{id: dev.id, missing: missing}
+		err := &ValueError{ID: dev.id, Missing: missing}
 		r.logger.Error(err.Error())
 		return dev.id, err
 	}
@@ -282,6 +281,27 @@ func (r *RingBuilder) AddDev(dev *Device) (int, error) {
 	r.version += 1
 
 	return dev.id, nil
+}
+
+/*
+Set the weight of a device. This should be called rather than
+just altering the weight key in the device dict directly,
+as the builder will need to rebuild some internal state
+to reflect the change.
+
+:param devID: device id
+:param weight: new weight for device
+*/
+func (r *RingBuilder) SetDevWeight(devID int, weight float64) error {
+	if _, exist := devIsExistIn(r.removeDevs, devID); exist {
+		err := &RemovedDeviceError{ID: devID, IncompletedOperation: "SetDevWeight"}
+		r.logger.Error(err.Error())
+		return err
+	}
+	r.devs[devID].weight = weight
+	r.devsChanged = true
+	r.version += 1
+	return nil
 }
 
 func (r *RingBuilder) iterDevs() (c chan *IndexedDevice) {
