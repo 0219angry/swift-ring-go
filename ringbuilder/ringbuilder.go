@@ -33,7 +33,7 @@ type RingBuilder struct {
 	dispresionGraph map[string]string
 	dispresion      float32
 
-	removeDevs []map[string]string
+	removeDevs []map[string]interface{}
 	ring       []byte
 	logger     *slog.Logger
 	logMu      *sync.Mutex
@@ -151,12 +151,51 @@ func FromDict(builderData *RingBuilder) *RingBuilder {
 // Reinitializes this RingBuilder instance from data obtaind from the builder dict given
 // This is to restore a RingBuilder that had its b.toDict() previously saved
 func (r *RingBuilder) CopyFrom(builder *RingBuilder) {
-	if len(builder.devs) > 0 {
-		r.partPower = builder.partPower
-
-	} else {
-
+	r.partPower = builder.partPower
+	r.nextPartPower = builder.nextPartPower
+	r.replicas = builder.replicas
+	r.minPartHours = builder.minPartHours
+	r.devs = deepCopy(builder.devs)
+	r.devsChanged = builder.devsChanged
+	r.overload = builder.overload
+	r.version = builder.version
+	copy(r.reprica2part2dev, builder.reprica2part2dev)
+	copy(r.lastPartMoves, builder.lastPartMoves)
+	r.lastPartMovesEpoch = builder.lastPartMovesEpoch
+	copy(r.lastPartMoves, builder.lastPartMoves)
+	r.lastPartGatherStart = builder.lastPartGatherStart
+	dispresionGraph := make(map[string]string)
+	for key, value := range builder.dispresionGraph {
+		dispresionGraph[key] = value
 	}
+	r.dispresionGraph = dispresionGraph
+	r.removeDevs = deepCopy(builder.removeDevs)
+	r.id = builder.id
+	r.ring = nil
+
+}
+
+// :param minPartHours: new value for minPartHours
+func (r *RingBuilder) ChangeMinPartHours(minPartHours byte) {
+	r.minPartHours = minPartHours
+}
+
+// :param newReplicaCount: new value for replicas
+func (r *RingBuilder) SetReplicas(newReplicaCount int) {
+	oldSlotsUsed := r.parts * r.replicas
+	newSlotsUsed := r.parts * newReplicaCount
+	if oldSlotsUsed != newSlotsUsed {
+		r.devsChanged = true
+	}
+	r.replicas = newReplicaCount
+}
+
+func (r *RingBuilder) setOverload(overload float32) {
+	r.overload = overload
+}
+
+func (r *RingBuilder) getRing() {
+
 }
 
 func (r *RingBuilder) iterDevs() (c chan map[string]interface{}) {

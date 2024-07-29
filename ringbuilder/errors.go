@@ -10,13 +10,13 @@ func (e *AttributeError) Error() string {
 type EmptyRingError struct{}
 
 func (e *EmptyRingError) Error() string {
-	errmsg := "There are no device in this ring, or all devices have been deleted"
+	errmsg := "there are no device in this ring, or all devices have been deleted"
 	return errmsg
 }
 
 type InvalidWeightError struct{}
 
 func (e *InvalidWeightError) Error() string {
-	errmsg := "Invalid weight type for device"
+	errmsg := "invalid weight type for device"
 	return errmsg
 }
