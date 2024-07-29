@@ -36,7 +36,7 @@ type RingBuilder struct {
 	removeDevs []map[string]string
 	ring       []byte
 	logger     *slog.Logger
-	logMu      sync.Mutex
+	logMu      *sync.Mutex
 }
 
 func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
@@ -47,7 +47,7 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 	r.replicas = params.replicas
 	r.minPartHours = params.minPartHours
 	r.parts = 1 << r.partPower
-	// r.devs = []map[string]string{}
+	r.devs = make([]map[string]interface{}, 0)
 	r.devsChanged = false
 	r.version = 0
 	r.overload = 0.0
@@ -139,6 +139,24 @@ func (r *RingBuilder) WeightOfOnePart() (float64, error) {
 		return 0.0, err
 	}
 	return float64(r.parts) * float64(r.replicas) / weightSum, nil
+}
+
+func FromDict(builderData *RingBuilder) *RingBuilder {
+	params := RingBuilderParameters{1, 1, 1}
+	b := NewRingBuilder(params)
+	b.CopyFrom(builderData)
+	return b
+}
+
+// Reinitializes this RingBuilder instance from data obtaind from the builder dict given
+// This is to restore a RingBuilder that had its b.toDict() previously saved
+func (r *RingBuilder) CopyFrom(builder *RingBuilder) {
+	if len(builder.devs) > 0 {
+		r.partPower = builder.partPower
+
+	} else {
+
+	}
 }
 
 func (r *RingBuilder) iterDevs() (c chan map[string]interface{}) {
