@@ -2,6 +2,7 @@ package ringbuilder
 
 import (
 	"log/slog"
+	"net"
 	"os"
 	"sync"
 	"time"
@@ -13,11 +14,25 @@ type RingBuilderParameters struct {
 	minPartHours byte
 }
 
+type Device struct {
+	id     int
+	weight float64
+	region int
+	zone   int
+	ip     net.IP
+	port   int
+	device string
+}
+type IndexedDevice struct {
+	index  int
+	device *Device
+}
+
 type RingBuilder struct {
 	RingBuilderParameters
 	nextPartPower int
 	parts         int
-	devs          []map[string]interface{}
+	devs          []*Device
 	devsChanged   bool
 	version       int
 	overload      float32
@@ -33,11 +48,15 @@ type RingBuilder struct {
 	dispresionGraph map[string]string
 	dispresion      float32
 
-	removeDevs []map[string]interface{}
+	removeDevs []Device
 	ring       []byte
 	logger     *slog.Logger
 	logMu      *sync.Mutex
 }
+
+const (
+	none = -1
+)
 
 func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 	r := new(RingBuilder)
@@ -47,7 +66,7 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 	r.replicas = params.replicas
 	r.minPartHours = params.minPartHours
 	r.parts = 1 << r.partPower
-	r.devs = make([]map[string]interface{}, 0)
+	r.devs = make([]*Device, 0)
 	r.devsChanged = false
 	r.version = 0
 	r.overload = 0.0
@@ -124,8 +143,8 @@ func (r *RingBuilder) MinPartSecondsLeft() int {
 func (r *RingBuilder) WeightOfOnePart() (float64, error) {
 	weightSum := 0.0
 	for dev := range r.iterDevs() {
-		if weight, ok := dev["weight"].(float64); ok {
-			weightSum += weight
+		if dev.device.weight > 0 {
+			weightSum += dev.device.weight
 		} else {
 			err := &InvalidWeightError{}
 			r.logger.Error(err.Error())
@@ -155,7 +174,7 @@ func (r *RingBuilder) CopyFrom(builder *RingBuilder) {
 	r.nextPartPower = builder.nextPartPower
 	r.replicas = builder.replicas
 	r.minPartHours = builder.minPartHours
-	r.devs = deepCopy(builder.devs)
+	copy(r.devs, builder.devs)
 	r.devsChanged = builder.devsChanged
 	r.overload = builder.overload
 	r.version = builder.version
@@ -169,7 +188,7 @@ func (r *RingBuilder) CopyFrom(builder *RingBuilder) {
 		dispresionGraph[key] = value
 	}
 	r.dispresionGraph = dispresionGraph
-	r.removeDevs = deepCopy(builder.removeDevs)
+	copy(r.removeDevs, builder.removeDevs)
 	r.id = builder.id
 	r.ring = nil
 
@@ -190,20 +209,87 @@ func (r *RingBuilder) SetReplicas(newReplicaCount int) {
 	r.replicas = newReplicaCount
 }
 
-func (r *RingBuilder) setOverload(overload float32) {
+func (r *RingBuilder) SetOverload(overload float32) {
 	r.overload = overload
 }
 
-func (r *RingBuilder) getRing() {
+func (r *RingBuilder) GetRing() {
 
 }
 
-func (r *RingBuilder) iterDevs() (c chan map[string]interface{}) {
-	c = make(chan map[string]interface{}, 1)
+func (r *RingBuilder) AddDev(dev *Device) (int, error) {
+	if dev.id == none {
+		if len(r.devs) > 0 {
+			found := false
+			for v := range r.iterDevs() {
+				if v.device == nil {
+					dev.id = v.index
+					r.devs[v.index] = dev
+					found = true
+					break
+				}
+			}
+			if !found {
+				dev.id = len(r.devs)
+				r.devs = append(r.devs, dev)
+			}
+		} else {
+			dev.id = 0
+			r.devs = append(r.devs, dev)
+		}
+	}
+
+	if dev.id < len(r.devs) && r.devs[dev.id] != nil {
+		err := &DuplicateDeviceError{dupulicateDeviceID: dev.id}
+		r.logger.Error(err.Error())
+		return none, err
+	}
+
+	// Add holes to r.devs to ensure r.devs[dev.id] will be the dev
+	for dev.id >= len(r.devs) {
+		r.devs = append(r.devs, nil)
+	}
+
+	missing := make([]string, 0)
+
+	if dev.region == 0 {
+		missing = append(missing, "region")
+	}
+	if dev.zone == 0 {
+		missing = append(missing, "zone")
+	}
+	if dev.ip == nil {
+		missing = append(missing, "ip")
+	}
+	if dev.port == 0 {
+		missing = append(missing, "port")
+	}
+	if dev.device == "" {
+		missing = append(missing, "device")
+	}
+	if dev.weight == 0 {
+		missing = append(missing, "weight")
+	}
+
+	if len(missing) > 0 {
+		err := &ValueError{id: dev.id, missing: missing}
+		r.logger.Error(err.Error())
+		return dev.id, err
+	}
+
+	r.devs[dev.id] = dev
+	r.devsChanged = true
+	r.version += 1
+
+	return dev.id, nil
+}
+
+func (r *RingBuilder) iterDevs() (c chan *IndexedDevice) {
+	c = make(chan *IndexedDevice, 1)
 	go func() {
-		for _, dev := range r.devs {
-			if dev["id"] != 0 {
-				c <- dev
+		for i, dev := range r.devs {
+			if dev.id != none {
+				c <- &IndexedDevice{index: i, device: dev}
 			}
 		}
 		close(c)
