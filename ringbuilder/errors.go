@@ -65,8 +65,6 @@ type RemovedDeviceError struct {
 }
 
 func (e *RemovedDeviceError) Error() string {
-	e.errmsg = fmt.Sprintf(
-		"operation could not be completed on devID %d %s", e.ID,
-		"because it is marked for removal (operation: %s)", e.IncompletedOperation)
+	e.errmsg = fmt.Sprintf("operation could not be completed on devID %d because it is marked for removal (operation: %s)", e.ID, e.IncompletedOperation)
 	return e.errmsg
 }
