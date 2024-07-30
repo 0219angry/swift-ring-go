@@ -15,12 +15,24 @@ type RingBuilderParameters struct {
 }
 
 type Device struct {
-	id     int
+	// unique interger identifier amongst devices.
+	// Default to the next id if the id key is not provided in the dict
+	id int
+	// a float of the relative weight of this device
+	// as compared to others; this indicated how many partitions
+	// the builder will try to assign to this device
 	weight float64
+	// integer indicating which region the device is in
 	region int
-	zone   int
-	ip     net.IP
-	port   int
+	// integer indicating which zone the device is in;
+	// a given partition will not be assigned to multiple devices
+	// within the same (region, zone) pair if there is any alternative
+	zone int
+	// the ip address of the device
+	ip net.IP
+	// the tcp port of the device
+	port int
+	// the device's name on disk (sdb1, for example)
 	device string
 }
 type IndexedDevice struct {
@@ -299,6 +311,48 @@ func (r *RingBuilder) SetDevWeight(devID int, weight float64) error {
 		return err
 	}
 	r.devs[devID].weight = weight
+	r.devsChanged = true
+	r.version += 1
+	return nil
+}
+
+/*
+Set the region of a device. This shoud be called rather than
+just altering the region key in the device dict directly,
+as the builder will need to rebuild some internal state
+to reflect the change.
+
+:param dev_id: device id
+:param region: new region for device
+*/
+func (r *RingBuilder) SetDevRegion(devID int, region int) error {
+	if _, exist := devIsExistIn(r.removeDevs, devID); exist {
+		err := &RemovedDeviceError{ID: devID, IncompletedOperation: "SetDevRegion"}
+		r.logger.Error(err.Error())
+		return err
+	}
+	r.devs[devID].region = region
+	r.devsChanged = true
+	r.version += 1
+	return nil
+}
+
+/*
+Set the zone of a device. This shoud be called rather than
+just altering the region key in the device dict directly,
+as the builder will need to rebuild some internal state
+to reflect the change.
+
+:param dev_id: device id
+:param zone: new zone for device
+*/
+func (r *RingBuilder) SetDevZone(devID int, zone int) error {
+	if _, exist := devIsExistIn(r.removeDevs, devID); exist {
+		err := &RemovedDeviceError{ID: devID, IncompletedOperation: "SetDevRegion"}
+		r.logger.Error(err.Error())
+		return err
+	}
+	r.devs[devID].zone = zone
 	r.devsChanged = true
 	r.version += 1
 	return nil
