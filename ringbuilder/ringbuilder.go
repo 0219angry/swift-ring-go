@@ -9,9 +9,9 @@ import (
 )
 
 type RingBuilderParameters struct {
-	partPower    int
-	replicas     int
-	minPartHours byte
+	partPower    int  // number of partitions = 2**partPower
+	replicas     int  // number of replicas for each partition
+	minPartHours byte // minimum number of hours between partitons change
 }
 
 type Device struct {
@@ -97,6 +97,7 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 	// r.ring
 
 	r.logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	r.logMu = &sync.Mutex{}
 
 	return r
 }
