@@ -60,7 +60,7 @@ type RingBuilder struct {
 	dispresionGraph map[string]string
 	dispresion      float32
 
-	removeDevs []Device
+	removeDevs []*Device
 	ring       []byte
 	logger     *slog.Logger
 	logMu      *sync.Mutex
@@ -93,7 +93,7 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 
 	// r.dispresionGraph
 	r.dispresion = 0.0
-	// r.removeDevs
+	r.removeDevs = make([]*Device, 0)
 	// r.ring
 
 	r.logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -357,6 +357,28 @@ func (r *RingBuilder) SetDevZone(devID int, zone int) error {
 	r.version += 1
 	return nil
 }
+
+/*
+Remove a device from the ring.
+
+:param devID: device id
+*/
+func (r *RingBuilder) Remove_dev(devID int) error {
+	dev := r.devs[devID]
+	dev.weight = 0
+	r.removeDevs = append(r.removeDevs, dev)
+	r.devsChanged = true
+	r.version += 1
+	return nil
+}
+
+/*
+Rebalance the ring.
+
+This is the main work function of the builder, as it will assign and
+reassign partitions to devices in the ring based aon weights, distinct zones,
+recent reassignments, etc.
+*/
 
 func (r *RingBuilder) iterDevs() (c chan *IndexedDevice) {
 	c = make(chan *IndexedDevice, 1)
