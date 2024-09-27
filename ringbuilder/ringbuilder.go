@@ -86,7 +86,7 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 
 	// r.reprica2part2dev = [][]string{}
 	r.lastPartMoves = make([]byte, r.parts)
-	// r.partMovedBitmap
+	r.partMovedBitmap = make([]byte, r.parts/8)
 	r.lastPartMovesEpoch = time.Now()
 
 	r.lastPartGatherStart = 0
@@ -147,7 +147,7 @@ func (r *RingBuilder) canPartMove(part int) bool {
 
 // the total seconds until a rebalance can be performed
 func (r *RingBuilder) MinPartSecondsLeft() int {
-	elapsedSeconds := time.Now().Sub(r.lastPartMovesEpoch).Seconds()
+	elapsedSeconds := time.Since(r.lastPartMovesEpoch).Seconds()
 	return max(int(r.minPartHours)*3600-int(elapsedSeconds), 0)
 }
 
@@ -231,37 +231,7 @@ func (r *RingBuilder) GetRing() {
 }
 
 func (r *RingBuilder) AddDev(dev *Device) (int, error) {
-	if dev.id == none {
-		if len(r.devs) > 0 {
-			found := false
-			for v := range r.iterDevs() {
-				if v.device == nil {
-					dev.id = v.index
-					r.devs[v.index] = dev
-					found = true
-					break
-				}
-			}
-			if !found {
-				dev.id = len(r.devs)
-				r.devs = append(r.devs, dev)
-			}
-		} else {
-			dev.id = 0
-			r.devs = append(r.devs, dev)
-		}
-	}
-	// Check for duplicate device ids in r.devs
-	if dev.id < len(r.devs) && r.devs[dev.id] != nil {
-		err := &DuplicateDeviceError{DupulicateDeviceID: dev.id}
-		r.logger.Error(err.Error())
-		return none, err
-	}
-	// Add holes to r.devs to ensure r.devs[dev.id] will be the dev
-	for dev.id >= len(r.devs) {
-		r.devs = append(r.devs, nil)
-	}
-	// missing device information
+	// check missing device information
 	missing := make([]string, 0)
 
 	if dev.region == 0 {
@@ -287,6 +257,39 @@ func (r *RingBuilder) AddDev(dev *Device) (int, error) {
 		err := &ValueError{ID: dev.id, Missing: missing}
 		r.logger.Error(err.Error())
 		return dev.id, err
+	}
+
+	if dev.id == none {
+		if len(r.devs) > 0 {
+			found := false
+			for v := range r.iterDevs() {
+				if v.device == nil {
+					dev.id = v.index
+					r.devs[v.index] = dev
+					found = true
+					break
+				}
+			}
+			if !found {
+				dev.id = len(r.devs)
+				r.devs = append(r.devs, dev)
+			}
+		} else {
+			dev.id = 0
+			r.devs = append(r.devs, dev)
+		}
+	} else {
+		// Check for duplicate device ids in r.devs
+		if dev.id < len(r.devs) && r.devs[dev.id] != nil {
+			err := &DuplicateDeviceError{DupulicateDeviceID: dev.id}
+			r.logger.Error(err.Error())
+			return none, err
+		}
+	}
+
+	// Add holes to r.devs to ensure r.devs[dev.id] will be the dev
+	for dev.id >= len(r.devs) {
+		r.devs = append(r.devs, nil)
 	}
 
 	r.devs[dev.id] = dev
@@ -380,6 +383,10 @@ This is the main work function of the builder, as it will assign and
 reassign partitions to devices in the ring based aon weights, distinct zones,
 recent reassignments, etc.
 */
+// func (r *RingBuilder) Rebalance() error {
+// 	numDevices := 0
+
+// }
 
 func (r *RingBuilder) iterDevs() (c chan *IndexedDevice) {
 	c = make(chan *IndexedDevice, 1)
