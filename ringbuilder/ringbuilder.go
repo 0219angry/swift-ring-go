@@ -60,7 +60,7 @@ type RingBuilder struct {
 	dispresionGraph map[string]string
 	dispresion      float32
 
-	removeDevs []Device
+	removeDevs []*Device
 	ring       []byte
 	logger     *slog.Logger
 	logMu      *sync.Mutex
@@ -343,7 +343,7 @@ just altering the region key in the device dict directly,
 as the builder will need to rebuild some internal state
 to reflect the change.
 
-:param dev_id: device id
+:param devID: device id
 :param zone: new zone for device
 */
 func (r *RingBuilder) SetDevZone(devID int, zone int) error {
@@ -356,6 +356,43 @@ func (r *RingBuilder) SetDevZone(devID int, zone int) error {
 	r.devsChanged = true
 	r.version += 1
 	return nil
+}
+
+/*
+Remove a device from the ring.
+
+:param devID: device id
+*/
+func (r *RingBuilder) RemoveDev(devID int) error {
+	if _, exist := devIsExistIn(r.removeDevs, devID); exist {
+		err := &RemovedDeviceError{ID: devID, IncompletedOperation: "RemoveDev"}
+		r.logger.Error(err.Error())
+		return err
+	}
+	dev := r.devs[devID]
+	dev.weight = 0
+	r.removeDevs = append(r.removeDevs, dev)
+	r.devsChanged = true
+	r.version += 1
+	return nil
+}
+
+/*
+Rebalance the ring.
+
+	This is the main work function of the builder, as it will assign and
+	reassign partitions to devices in the ring based on weights, distinct
+	zones, recent reassignments, etc.
+
+	The process doesn't always perfectly assign partitions (that'd take a
+	lot more analysis and therefore a lot more time -- I had code that did
+	that before). Because of this, it keeps rebalancing until the device
+	skew (number of partitions a device wants compared to what it has) gets
+	below 1% or doesn't change by more than 1% (only happens with a ring
+	that can't be balanced no matter what).
+*/
+func (r *RingBuilder) Rebalance(seed int) {
+
 }
 
 func (r *RingBuilder) iterDevs() (c chan *IndexedDevice) {
