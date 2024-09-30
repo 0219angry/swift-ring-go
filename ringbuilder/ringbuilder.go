@@ -9,9 +9,9 @@ import (
 )
 
 type RingBuilderParameters struct {
-	partPower    int
-	replicas     int
-	minPartHours byte
+	partPower    int  // number of partitions = 2**partPower
+	replicas     int  // number of replicas for each partition
+	minPartHours byte // minimum number of hours between partitons change
 }
 
 type Device struct {
@@ -86,17 +86,18 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 
 	// r.reprica2part2dev = [][]string{}
 	r.lastPartMoves = make([]byte, r.parts)
-	// r.partMovedBitmap
+	r.partMovedBitmap = make([]byte, r.parts/8)
 	r.lastPartMovesEpoch = time.Now()
 
 	r.lastPartGatherStart = 0
 
 	// r.dispresionGraph
 	r.dispresion = 0.0
-	// r.removeDevs
+	r.removeDevs = make([]*Device, 0)
 	// r.ring
 
 	r.logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	r.logMu = &sync.Mutex{}
 
 	return r
 }
@@ -146,7 +147,7 @@ func (r *RingBuilder) canPartMove(part int) bool {
 
 // the total seconds until a rebalance can be performed
 func (r *RingBuilder) MinPartSecondsLeft() int {
-	elapsedSeconds := time.Now().Sub(r.lastPartMovesEpoch).Seconds()
+	elapsedSeconds := time.Since(r.lastPartMovesEpoch).Seconds()
 	return max(int(r.minPartHours)*3600-int(elapsedSeconds), 0)
 }
 
@@ -230,37 +231,7 @@ func (r *RingBuilder) GetRing() {
 }
 
 func (r *RingBuilder) AddDev(dev *Device) (int, error) {
-	if dev.id == none {
-		if len(r.devs) > 0 {
-			found := false
-			for v := range r.iterDevs() {
-				if v.device == nil {
-					dev.id = v.index
-					r.devs[v.index] = dev
-					found = true
-					break
-				}
-			}
-			if !found {
-				dev.id = len(r.devs)
-				r.devs = append(r.devs, dev)
-			}
-		} else {
-			dev.id = 0
-			r.devs = append(r.devs, dev)
-		}
-	}
-	// Check for duplicate device ids in r.devs
-	if dev.id < len(r.devs) && r.devs[dev.id] != nil {
-		err := &DuplicateDeviceError{DupulicateDeviceID: dev.id}
-		r.logger.Error(err.Error())
-		return none, err
-	}
-	// Add holes to r.devs to ensure r.devs[dev.id] will be the dev
-	for dev.id >= len(r.devs) {
-		r.devs = append(r.devs, nil)
-	}
-	// missing device information
+	// check missing device information
 	missing := make([]string, 0)
 
 	if dev.region == 0 {
@@ -286,6 +257,39 @@ func (r *RingBuilder) AddDev(dev *Device) (int, error) {
 		err := &ValueError{ID: dev.id, Missing: missing}
 		r.logger.Error(err.Error())
 		return dev.id, err
+	}
+
+	if dev.id == none {
+		if len(r.devs) > 0 {
+			found := false
+			for v := range r.iterDevs() {
+				if v.device == nil {
+					dev.id = v.index
+					r.devs[v.index] = dev
+					found = true
+					break
+				}
+			}
+			if !found {
+				dev.id = len(r.devs)
+				r.devs = append(r.devs, dev)
+			}
+		} else {
+			dev.id = 0
+			r.devs = append(r.devs, dev)
+		}
+	} else {
+		// Check for duplicate device ids in r.devs
+		if dev.id < len(r.devs) && r.devs[dev.id] != nil {
+			err := &DuplicateDeviceError{DupulicateDeviceID: dev.id}
+			r.logger.Error(err.Error())
+			return none, err
+		}
+	}
+
+	// Add holes to r.devs to ensure r.devs[dev.id] will be the dev
+	for dev.id >= len(r.devs) {
+		r.devs = append(r.devs, nil)
 	}
 
 	r.devs[dev.id] = dev
@@ -363,7 +367,7 @@ Remove a device from the ring.
 
 :param devID: device id
 */
-func (r *RingBuilder) RemoveDev(devID int) error {
+func (r *RingBuilder) Remove_dev(devID int) error {
 	if _, exist := devIsExistIn(r.removeDevs, devID); exist {
 		err := &RemovedDeviceError{ID: devID, IncompletedOperation: "RemoveDev"}
 		r.logger.Error(err.Error())
