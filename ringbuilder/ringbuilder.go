@@ -47,7 +47,7 @@ type RingBuilder struct {
 	devs          []*Device
 	devsChanged   bool
 	version       int
-	overload      float32
+	overload      float64
 	id            string
 
 	reprica2part2dev [][]string
@@ -58,7 +58,7 @@ type RingBuilder struct {
 	lastPartGatherStart int
 
 	dispresionGraph map[string]string
-	dispresion      float32
+	dispresion      float64
 
 	removeDevs []*Device
 	ring       []byte
@@ -70,7 +70,32 @@ const (
 	none = -1
 )
 
-func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
+func NewRingBuilder(params RingBuilderParameters) (*RingBuilder, error) {
+	// create new logger
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	// parameter validation
+	if params.partPower < 0 {
+		err := &ParameterValueError{Parameter: "partPower", Details: "must be at least 0"}
+		logger.Error(err.Error())
+		return nil, err
+	}
+	if params.partPower > 32 {
+		err := &ParameterValueError{Parameter: "partPower", Details: "must be at most 32"}
+		logger.Error(err.Error())
+		return nil, err
+	}
+	if params.replicas < 1 {
+		err := &ParameterValueError{Parameter: "replicas", Details: "must be at least 0"}
+		logger.Error(err.Error())
+		return nil, err
+	}
+	if params.minPartHours < 1 {
+		err := &ParameterValueError{Parameter: "minPartHours", Details: "must be at least 1"}
+		logger.Error(err.Error())
+		return nil, err
+	}
+
 	r := new(RingBuilder)
 
 	r.partPower = params.partPower
@@ -96,10 +121,10 @@ func NewRingBuilder(params RingBuilderParameters) *RingBuilder {
 	r.removeDevs = make([]*Device, 0)
 	// r.ring
 
-	r.logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	r.logger = logger
 	r.logMu = &sync.Mutex{}
 
-	return r
+	return r, nil
 }
 
 func (r *RingBuilder) SetLogger(l *slog.Logger) {
@@ -173,11 +198,14 @@ func (r *RingBuilder) WeightOfOnePart() (float64, error) {
 	return float64(r.parts) * float64(r.replicas) / weightSum, nil
 }
 
-func FromDict(builderData *RingBuilder) *RingBuilder {
+func FromDict(builderData *RingBuilder) (*RingBuilder, error) {
 	params := RingBuilderParameters{1, 1, 1}
-	b := NewRingBuilder(params)
+	b, err := NewRingBuilder(params)
+	if err != nil {
+		return nil, err
+	}
 	b.CopyFrom(builderData)
-	return b
+	return b, nil
 }
 
 // Reinitializes this RingBuilder instance from data obtaind from the builder dict given
@@ -222,7 +250,7 @@ func (r *RingBuilder) SetReplicas(newReplicaCount int) {
 	r.replicas = newReplicaCount
 }
 
-func (r *RingBuilder) SetOverload(overload float32) {
+func (r *RingBuilder) SetOverload(overload float64) {
 	r.overload = overload
 }
 
@@ -314,6 +342,11 @@ func (r *RingBuilder) SetDevWeight(devID int, weight float64) error {
 		r.logger.Error(err.Error())
 		return err
 	}
+	if weight <= 0 {
+		err := &ParameterValueError{Parameter: "weight", Details: "must be at least 0"}
+		r.logger.Error(err.Error())
+		return err
+	}
 	r.devs[devID].weight = weight
 	r.devsChanged = true
 	r.version += 1
@@ -332,6 +365,11 @@ to reflect the change.
 func (r *RingBuilder) SetDevRegion(devID int, region int) error {
 	if _, exist := devIsExistIn(r.removeDevs, devID); exist {
 		err := &RemovedDeviceError{ID: devID, IncompletedOperation: "SetDevRegion"}
+		r.logger.Error(err.Error())
+		return err
+	}
+	if region <= 0 {
+		err := &ParameterValueError{Parameter: "region", Details: "must be at least 1"}
 		r.logger.Error(err.Error())
 		return err
 	}
@@ -356,6 +394,11 @@ func (r *RingBuilder) SetDevZone(devID int, zone int) error {
 		r.logger.Error(err.Error())
 		return err
 	}
+	if zone <= 0 {
+		err := &ParameterValueError{Parameter: "zone", Details: "must be at least 1"}
+		r.logger.Error(err.Error())
+		return err
+	}
 	r.devs[devID].zone = zone
 	r.devsChanged = true
 	r.version += 1
@@ -367,14 +410,22 @@ Remove a device from the ring.
 
 :param devID: device id
 */
-func (r *RingBuilder) Remove_dev(devID int) error {
+func (r *RingBuilder) RemoveDev(devID int) error {
+	// already removed device check
 	if _, exist := devIsExistIn(r.removeDevs, devID); exist {
 		err := &RemovedDeviceError{ID: devID, IncompletedOperation: "RemoveDev"}
 		r.logger.Error(err.Error())
 		return err
 	}
+	// device ID range check
+	if devID < 0 || devID >= len(r.devs) {
+		err := &UnknownDeviceError{ID: devID}
+		r.logger.Error(err.Error())
+		return err
+	}
+	// remove device
 	dev := r.devs[devID]
-	dev.weight = 0
+	dev.weight = 0.0
 	r.removeDevs = append(r.removeDevs, dev)
 	r.devsChanged = true
 	r.version += 1
@@ -411,4 +462,15 @@ func (r *RingBuilder) iterDevs() (c chan *IndexedDevice) {
 	}()
 
 	return
+}
+
+/*
+Set the devsChanged flag.
+
+	This function is used only in tests.
+
+:param value: bool value to set devsChanged
+*/
+func (r *RingBuilder) setDevsChanged(value bool) {
+	r.devsChanged = value
 }
